@@ -1,0 +1,18 @@
+能用到的特征
+1. 句子长度
+2. word个数
+3. word_share word交并比
+4. word_share word交和比
+5. word_match_share q1的word在q2的个数+q2的word在q1的个数
+6. word平均个数(len(word1) + len(word2))/2 意义貌似不大
+7. (wyj)相同的字符个数比
+8. 句子长度差
+9. 不包含空格的句子字符长度
+10. 共同word个数
+
+找出重复word最多的但不是重复问题的
+找出重复word最少的但是重复问题的
+
+步骤:
+1. 观察数据
+2. 
