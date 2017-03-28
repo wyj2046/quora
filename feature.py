@@ -69,7 +69,7 @@ data['wmd'] = data.apply(lambda x: wmd(x['question1'], x['question2']), axis=1)
 
 norm_model = gensim.models.KeyedVectors.load_word2vec_format('data/GoogleNews-vectors-negative300.bin.gz', binary=True)
 norm_model.init_sims(replace=True)
-data['norm_wmd'] = data.apply(lambda x: norm_wmd(x['question1'], x['quesion2']), axis=1)
+data['norm_wmd'] = data.apply(lambda x: norm_wmd(x['question1'], x['question2']), axis=1)
 
 question1_vectors = np.zeros((data.shape[0], 300))
 for i, q in tqdm(enumerate(data['question1'].values)):
