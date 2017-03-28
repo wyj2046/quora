@@ -28,10 +28,10 @@ def norm_wmd(model, s1, s2):
     s2 = str(s2).lower().decode('utf-8').split()
     s1 = [w for w in s1 if w not in stop_words]
     s2 = [w for w in s2 if w not in stop_words]
-    return norm_model.wmdistance(s1, s2)
+    return model.wmdistance(s1, s2)
 
 
-def sent2vec(s):
+def sent2vec(model, s):
     words = str(s).lower().decode('utf-8')
     words = word_tokenize(words)
     words = [w for w in words if w not in stop_words]
@@ -77,11 +77,11 @@ def add_word2vec_feat(data):
 
     question1_vectors = np.zeros((data.shape[0], 300))
     for i, q in tqdm(enumerate(data['question1'].values)):
-        question1_vectors[i, :] = sent2vec(q)
+        question1_vectors[i, :] = sent2vec(model, q)
 
     question2_vectors = np.zeros((data.shape[0], 300))
     for i, q in tqdm(enumerate(data['question2'].values)):
-        question2_vectors[i, :] = sent2vec(q)
+        question2_vectors[i, :] = sent2vec(model, q)
 
     # cPickle.dump(question1_vectors, open('data/q1_w2v.pkl', 'wb'), -1)
     # cPickle.dump(question2_vectors, open('data/q2_w2v.pkl', 'wb'), -1)
