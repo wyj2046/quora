@@ -16,3 +16,20 @@
 步骤:
 1. 观察数据
 2. 
+
+问题:
+这几列数据会报这个错误
+Array contains NaN or infinity
+在train_test_split里
+
+train_data.isnull().any()
+cosine_distance
+jaccard_distance
+braycurtis_distance
+
+np.where(np.isnan(train_data['cosine_distance']))
+(array([   221,    292,    613, ..., 403697, 404176, 404276]),)
+train_data.iloc[264]
+
+idea:
+把test里概率较大的id作为样本加到train中去, 增加样本数
