@@ -129,7 +129,7 @@ if __name__ == '__main__':
     history_pd = pd.DataFrame({'epoch': [i + 1 for i in history.epoch],
                                'training': history.history['loss'],
                                'validation': history.history['val_loss']})
-    history_pd.to_csv(args.history_file, index=False)
+    history_pd.to_csv(history_file, index=False)
 
     if args.gcp:
         output_path = config.get('gcp', 'output_path')
