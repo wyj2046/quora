@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
+import os
 import argparse
 import pandas as pd
 import numpy as np
+import subprocess
 from keras.models import Sequential
 from keras.layers.embeddings import Embedding
 from keras.layers.core import Dense
@@ -102,20 +104,33 @@ if __name__ == '__main__':
         type=float,
         default=0.1
     )
+    parser.add_argument(
+        '--job-dir',
+        help='GCS location to write checkpoints and export models',
+        required=True
+    )
 
     args = parser.parse_args()
 
-    train_q1 = np.load(open(args.train_q1, 'rb'))
-    train_q2 = np.load(open(args.train_q2, 'rb'))
-    test_q1 = np.load(open(args.test_q1, 'rb'))
-    test_q2 = np.load(open(args.test_q2, 'rb'))
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.train_q1), '/tmp'])
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.train_q2), '/tmp'])
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.test_q1), '/tmp'])
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.test_q2), '/tmp'])
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.labels), '/tmp'])
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.test_id), '/tmp'])
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', os.path.join('gs://kaggle-quora/data/', args.embedding_matrix), '/tmp'])
 
-    labels = np.load(open(args.labels, 'rb'))
+    train_q1 = np.load(open(os.path.join('/tmp', args.train_q1), 'rb'))
+    train_q2 = np.load(open(os.path.join('/tmp', args.train_q2), 'rb'))
+    test_q1 = np.load(open(os.path.join('/tmp', args.test_q1), 'rb'))
+    test_q2 = np.load(open(os.path.join('/tmp', args.test_q2), 'rb'))
+
+    labels = np.load(open(os.path.join('/tmp', args.labels), 'rb'))
     train_y = labels
 
-    test_id = np.load(open(args.test_id, 'rb'))
+    test_id = np.load(open(os.path.join('/tmp', args.test_id), 'rb'))
 
-    embedding_matrix = np.load(open(args.embedding_matrix, 'rb'))
+    embedding_matrix = np.load(open(os.path.join('/tmp', args.embedding_matrix), 'rb'))
 
     nb_words = args.nb_words
     embedding_dim = args.embedding_dim
@@ -152,6 +167,8 @@ if __name__ == '__main__':
 
     history = model.fit([train_q1, train_q2], y=train_y, batch_size=batch_size, epochs=nb_epoch, verbose=1, validation_split=validation_split, shuffle=True, callbacks=[checkpoint, early_stopping])
 
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', args.model_file, os.path.join('gs://kaggle-quora/model/', os.path.basename(args.model_file))])
+
     model.load_weights(args.model_file)
 
     pred = model.predict([test_q1, test_q2], batch_size=batch_size, verbose=1)
@@ -160,6 +177,7 @@ if __name__ == '__main__':
     sub['test_id'] = test_id
     sub['is_duplicate'] = pred
     sub.to_csv(args.submission_file, index=False)
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', args.submission_file, os.path.join('gs://kaggle-quora/submission/', os.path.basename(args.submission_file))])
 
     min_val_loss, idx = min((val, idx) for (idx, val) in enumerate(history.history['val_loss']))
     print idx + 1, min_val_loss
@@ -168,6 +186,7 @@ if __name__ == '__main__':
                                'training': history.history['loss'],
                                'validation': history.history['val_loss']})
     history_pd.to_csv(args.history_file, index=False)
+    subprocess.check_call(['gsutil', '-m', 'cp', '-r', args.history_file, os.path.join('gs://kaggle-quora/plot/', os.path.basename(args.history_file))])
     # plot
     # ax = history.ix[:, :].plot(x='epoch', figsize={5, 8}, grid=True)
     # ax.set_ylabel('loss')
