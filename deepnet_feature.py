@@ -22,7 +22,7 @@ TEST_Q1_DATA_FILE = 'data/test_q1.npy'
 TEST_Q2_DATA_FILE = 'data/test_q2.npy'
 EMBEDDING_MATRIX_FILE = 'data/embedding_matrix.npy'
 NB_WORDS_DATA_FILE = 'data/nb_words.json'
-LABEL_FILE = 'data/label.npy'
+LABEL_FILE = 'data/labels.npy'
 TEST_ID_FILE = 'data/test_id.npy'
 
 
