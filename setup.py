@@ -9,5 +9,6 @@ setup(name='quora',
       license='MIT',
       install_requires=[
           'keras',
+          'h5py'
       ],
       zip_safe=False)
