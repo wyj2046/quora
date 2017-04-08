@@ -15,6 +15,7 @@ from keras.layers import Merge
 from keras.layers.normalization import BatchNormalization
 from keras.callbacks import ModelCheckpoint
 from keras.callbacks import EarlyStopping
+from tensorflow.python.lib.io import file_io
 
 
 if __name__ == '__main__':
@@ -26,12 +27,25 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--param_config',
+        help='param_config_file',
+        required=True
+    )
+
+    parser.add_argument(
         '--job-dir',
         help='GCS location to write checkpoints and export models',
     )
 
     config = ConfigParser.ConfigParser()
-    config.read('nn2.conf')
+
+    args = parser.parse_args()
+    if args.gcp:
+        with file_io.FileIO(args.param_config, 'r') as f:
+            config.readfp(f)
+    else:
+        with open(args.param_config, 'r') as f:
+            config.readfp(f)
 
     nb_words = config.getint('common', 'nb_words')
     embedding_dim = config.getint('common', 'embedding_dim')
@@ -44,7 +58,6 @@ if __name__ == '__main__':
     submission_file = config.get('common', 'submission_file')
     history_file = config.get('common', 'history_file')
 
-    args = parser.parse_args()
     if args.gcp:
         train_q1_path = config.get('gcp', 'train_q1_path')
         train_q2_path = config.get('gcp', 'train_q2_path')
