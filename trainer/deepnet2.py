@@ -86,7 +86,7 @@ if __name__ == '__main__':
 
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    checkpoint = ModelCheckpoint(model_file, monitor='val_acc', save_best_only=True, verbose=1)
+    checkpoint = ModelCheckpoint(model_file, monitor='val_loss', save_best_only=True, verbose=1)
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=50, verbose=0, mode='auto')
 
     history = model.fit([train_q1, train_q2], y=labels, batch_size=batch_size, epochs=nb_epoch, verbose=1, validation_split=validation_split, shuffle=True, callbacks=[checkpoint, early_stopping])
