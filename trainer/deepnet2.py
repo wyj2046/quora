@@ -2,8 +2,8 @@
 import os
 import argparse
 import ConfigParser
+import cPickle as pickle
 import pandas as pd
-import numpy as np
 import subprocess
 from keras.models import Sequential
 from keras.layers.embeddings import Embedding
@@ -33,19 +33,20 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--data_path',
+        help='data path',
+        required=True
+    )
+
+    parser.add_argument(
         '--job-dir',
         help='GCS location to write checkpoints and export models',
     )
 
     config = ConfigParser.ConfigParser()
-
     args = parser.parse_args()
-    if args.gcp:
-        with file_io.FileIO(args.param_config, 'r') as f:
-            config.readfp(f)
-    else:
-        with open(args.param_config, 'r') as f:
-            config.readfp(f)
+    with file_io.FileIO(args.param_config, 'r') as f:
+        config.readfp(f)
 
     nb_words = config.getint('common', 'nb_words')
     embedding_dim = config.getint('common', 'embedding_dim')
@@ -58,46 +59,9 @@ if __name__ == '__main__':
     submission_file = config.get('common', 'submission_file')
     history_file = config.get('common', 'history_file')
 
-    if args.gcp:
-        train_q1_path = config.get('gcp', 'train_q1_path')
-        train_q2_path = config.get('gcp', 'train_q2_path')
-        test_q1_path = config.get('gcp', 'test_q1_path')
-        test_q2_path = config.get('gcp', 'test_q2_path')
-        labels_path = config.get('gcp', 'labels_path')
-        test_id_path = config.get('gcp', 'test_id_path')
-        embedding_matrix_path = config.get('gcp', 'embedding_matrix_path')
-
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', train_q1_path, '/tmp'])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', train_q2_path, '/tmp'])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', test_q1_path, '/tmp'])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', test_q2_path, '/tmp'])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', labels_path, '/tmp'])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', test_id_path, '/tmp'])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', embedding_matrix_path, '/tmp'])
-
-        train_q1_path = os.path.join('/tmp', os.path.basename(train_q1_path))
-        train_q2_path = os.path.join('/tmp', os.path.basename(train_q2_path))
-        test_q1_path = os.path.join('/tmp', os.path.basename(test_q1_path))
-        test_q2_path = os.path.join('/tmp', os.path.basename(test_q2_path))
-        labels_path = os.path.join('/tmp', os.path.basename(labels_path))
-        test_id_path = os.path.join('/tmp', os.path.basename(test_id_path))
-        embedding_matrix_path = os.path.join('/tmp', os.path.basename(embedding_matrix_path))
-    else:
-        train_q1_path = config.get('local', 'train_q1_path')
-        train_q2_path = config.get('local', 'train_q2_path')
-        test_q1_path = config.get('local', 'test_q1_path')
-        test_q2_path = config.get('local', 'test_q2_path')
-        labels_path = config.get('local', 'labels_path')
-        test_id_path = config.get('local', 'test_id_path')
-        embedding_matrix_path = config.get('local', 'embedding_matrix_path')
-
-    train_q1 = np.load(open(train_q1_path, 'rb'))
-    train_q2 = np.load(open(train_q2_path, 'rb'))
-    test_q1 = np.load(open(test_q1_path, 'rb'))
-    test_q2 = np.load(open(test_q2_path, 'rb'))
-    labels = np.load(open(labels_path, 'rb'))
-    test_id = np.load(open(test_id_path, 'rb'))
-    embedding_matrix = np.load(open(embedding_matrix_path, 'rb'))
+    with file_io.FileIO(args.data_path, 'r') as f:
+        all_data = pickle.load(f)
+    (train_q1, train_q2, test_q1, test_q2, embedding_matrix, labels, test_id) = all_data
 
     Q1 = Sequential()
     Q1.add(Embedding(nb_words + 1, embedding_dim, weights=[embedding_matrix], input_length=max_sequence_length, trainable=False))
@@ -145,10 +109,9 @@ if __name__ == '__main__':
     history_pd.to_csv(history_file, index=False)
 
     if args.gcp:
-        output_path = config.get('gcp', 'output_path')
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', model_file, os.path.join(output_path, model_file)])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', submission_file, os.path.join(output_path, submission_file)])
-        subprocess.check_call(['gsutil', '-m', 'cp', '-r', history_file, os.path.join(output_path, history_file)])
+        subprocess.check_call(['gsutil', '-m', 'cp', '-r', model_file, os.path.join(args.job_dir, model_file)])
+        subprocess.check_call(['gsutil', '-m', 'cp', '-r', submission_file, os.path.join(args.job_dir, submission_file)])
+        subprocess.check_call(['gsutil', '-m', 'cp', '-r', history_file, os.path.join(args.job_dir, history_file)])
 
     # plot
     # ax = history.ix[:, :].plot(x='epoch', figsize={5, 8}, grid=True)

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
+import cPickle as pickle
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-import json
 from keras.preprocessing import text
 from keras.preprocessing import sequence
 
@@ -16,21 +16,10 @@ TRAIN_FILE = 'input/train.csv'
 TEST_FILE = 'input/test.csv'
 GLOVE_FILE = 'data/glove.840B.300d.txt'
 
-TRAIN_Q1_DATA_FILE = 'data/train_q1.npy'
-TRAIN_Q2_DATA_FILE = 'data/train_q2.npy'
-TEST_Q1_DATA_FILE = 'data/test_q1.npy'
-TEST_Q2_DATA_FILE = 'data/test_q2.npy'
-EMBEDDING_MATRIX_FILE = 'data/embedding_matrix.npy'
-NB_WORDS_DATA_FILE = 'data/nb_words.json'
-LABEL_FILE = 'data/labels.npy'
-TEST_ID_FILE = 'data/test_id.npy'
-
 
 if __name__ == '__main__':
     train_data = pd.read_csv(TRAIN_FILE)
     test_data = pd.read_csv(TEST_FILE)
-
-    train_y = train_data.is_duplicate.values
 
     tk = text.Tokenizer(num_words=MAX_NUM_WORDS)
     tk.fit_on_texts(list(train_data.question1.values.astype(str)) +
@@ -69,18 +58,11 @@ if __name__ == '__main__':
     test_q1 = sequence.pad_sequences(test_q1_word_sequence, maxlen=MAX_SEQUENCE_LENGTH)
     test_q2 = sequence.pad_sequences(test_q2_word_sequence, maxlen=MAX_SEQUENCE_LENGTH)
 
-    np.save(open(TRAIN_Q1_DATA_FILE, 'wb'), train_q1)
-    np.save(open(TRAIN_Q2_DATA_FILE, 'wb'), train_q2)
-    np.save(open(TEST_Q1_DATA_FILE, 'wb'), test_q1)
-    np.save(open(TEST_Q2_DATA_FILE, 'wb'), test_q2)
-
-    np.save(open(EMBEDDING_MATRIX_FILE, 'wb'), embedding_matrix)
-
-    with open(NB_WORDS_DATA_FILE, 'w') as f:
-        json.dump({'nb_words': nb_words}, f)
-
     labels = np.array(train_data.is_duplicate.values, dtype=int)
-    np.save(open(LABEL_FILE, 'wb'), labels)
 
     test_id = np.array(test_data.test_id.values, dtype=int)
-    np.save(open(TEST_ID_FILE, 'wb'), test_id)
+
+    all_data = (train_q1, train_q2, test_q1, test_q2, embedding_matrix, labels, test_id)
+    pickle.dump(all_data, open('data/all_data.pickle', 'w'), True)
+
+    print 'nb_words:%d' % nb_words
