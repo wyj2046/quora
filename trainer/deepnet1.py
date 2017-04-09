@@ -1,193 +1,197 @@
 # -*- coding: utf-8 -*-
+import os
+import argparse
+import ConfigParser
+import cPickle as pickle
 import pandas as pd
-import numpy as np
-from tqdm import tqdm
+import subprocess
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation, Dropout
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM
 from keras.layers.normalization import BatchNormalization
-from keras.utils import np_utils
 from keras.layers import Merge
 from keras.layers import TimeDistributed, Lambda
 from keras.layers import Convolution1D, GlobalMaxPooling1D
 from keras.callbacks import ModelCheckpoint
+from keras.callbacks import EarlyStopping
 from keras import backend as K
 from keras.layers.advanced_activations import PReLU
-from keras.preprocessing import sequence, text
+from tensorflow.python.lib.io import file_io
 
-data = pd.read_csv('data/f2.csv')
-y = data.is_duplicate.values
 
-tk = text.Tokenizer(num_words=200000)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--gcp',
+        help='program in local or gcp',
+        action='store_true'
+    )
 
-max_len = 40
-# 应该拿test_data一起fit
-tk.fit_on_texts(list(data.question1.values) + list(data.question2.values.astype(str)))
-x1 = tk.texts_to_sequences(data.question1.values)
-x1 = sequence.pad_sequences(x1, maxlen=max_len)
+    parser.add_argument(
+        '--param_config',
+        help='param_config_file',
+        required=True
+    )
 
-x2 = tk.texts_to_sequences(data.question2.values.astype(str))
-x2 = sequence.pad_sequences(x2, maxlen=max_len)
+    parser.add_argument(
+        '--data_path',
+        help='data path',
+        required=True
+    )
 
-word_index = tk.word_index
+    parser.add_argument(
+        '--job-dir',
+        help='GCS location to write checkpoints and export models',
+    )
 
-ytrain_enc = np_utils.to_categorical(y)
+    config = ConfigParser.ConfigParser()
+    args = parser.parse_args()
+    with file_io.FileIO(args.param_config, 'r') as f:
+        config.readfp(f)
 
-embeddings_index = {}
-f = open('data/glove.840B.300d.txt')
-for line in tqdm(f):
-    values = line.split()
-    word = values[0]
-    coefs = np.asarray(values[1:], dtype='float32')
-    embeddings_index[word] = coefs
-f.close()
+    nb_words = config.getint('common', 'nb_words')
+    embedding_dim = config.getint('common', 'embedding_dim')
+    max_sequence_length = config.getint('common', 'max_sequence_length')
+    batch_size = config.getint('common', 'batch_size')
+    nb_epoch = config.getint('common', 'nb_epoch')
+    validation_split = config.getfloat('common', 'validation_split')
 
-print('Found %s word vectors.' % len(embeddings_index))
+    dropout = config.getfloat('common', 'dropout')
+    filter_length = config.getint('common', 'filter_length')
+    nb_filter = config.getint('common', 'nb_filter')
+    pool_length = config.getint('common', 'pool_length')
 
-embedding_matrix = np.zeros((len(word_index) + 1, 300))
-for word, i in tqdm(word_index.items()):
-    embedding_vector = embeddings_index.get(word)
-    if embedding_vector is not None:
-        embedding_matrix[i] = embedding_vector
+    model_file = config.get('common', 'model_file')
+    submission_file = config.get('common', 'submission_file')
+    history_file = config.get('common', 'history_file')
 
-max_features = 200000
-filter_length = 5
-nb_filter = 64
-pool_length = 4
+    with file_io.FileIO(args.data_path, 'r') as f:
+        all_data = pickle.load(f)
+    (train_q1, train_q2, test_q1, test_q2, embedding_matrix, labels, test_id) = all_data
 
-model = Sequential()
-print('Build model...')
+    model1 = Sequential()
+    model1.add(Embedding(nb_words + 1,
+                         embedding_dim,
+                         weights=[embedding_matrix],
+                         input_length=max_sequence_length,
+                         trainable=False))
 
-model1 = Sequential()
-model1.add(Embedding(len(word_index) + 1,
-                     300,
-                     weights=[embedding_matrix],
-                     input_length=40,
-                     trainable=False))
+    model1.add(TimeDistributed(Dense(embedding_dim, activation='relu')))
+    model1.add(Lambda(lambda x: K.sum(x, axis=1), output_shape=(embedding_dim,)))
 
-model1.add(TimeDistributed(Dense(300, activation='relu')))
-model1.add(Lambda(lambda x: K.sum(x, axis=1), output_shape=(300,)))
+    model2 = Sequential()
+    model2.add(Embedding(nb_words + 1,
+                         embedding_dim,
+                         weights=[embedding_matrix],
+                         input_length=max_sequence_length,
+                         trainable=False))
 
-model2 = Sequential()
-model2.add(Embedding(len(word_index) + 1,
-                     300,
-                     weights=[embedding_matrix],
-                     input_length=40,
-                     trainable=False))
+    model2.add(TimeDistributed(Dense(embedding_dim, activation='relu')))
+    model2.add(Lambda(lambda x: K.sum(x, axis=1), output_shape=(embedding_dim,)))
 
-model2.add(TimeDistributed(Dense(300, activation='relu')))
-model2.add(Lambda(lambda x: K.sum(x, axis=1), output_shape=(300,)))
+    model3 = Sequential()
+    model3.add(Embedding(nb_words + 1,
+                         embedding_dim,
+                         weights=[embedding_matrix],
+                         input_length=max_sequence_length,
+                         trainable=False))
+    model3.add(Convolution1D(nb_filter=nb_filter,
+                             filter_length=filter_length,
+                             border_mode='valid',
+                             activation='relu',
+                             subsample_length=1))
+    model3.add(Dropout(dropout))
 
-model3 = Sequential()
-model3.add(Embedding(len(word_index) + 1,
-                     300,
-                     weights=[embedding_matrix],
-                     input_length=40,
-                     trainable=False))
-model3.add(Convolution1D(nb_filter=nb_filter,
-                         filter_length=filter_length,
-                         border_mode='valid',
-                         activation='relu',
-                         subsample_length=1))
-model3.add(Dropout(0.2))
+    model3.add(Convolution1D(nb_filter=nb_filter,
+                             filter_length=filter_length,
+                             border_mode='valid',
+                             activation='relu',
+                             subsample_length=1))
 
-model3.add(Convolution1D(nb_filter=nb_filter,
-                         filter_length=filter_length,
-                         border_mode='valid',
-                         activation='relu',
-                         subsample_length=1))
+    model3.add(GlobalMaxPooling1D())
+    model3.add(Dropout(dropout))
 
-model3.add(GlobalMaxPooling1D())
-model3.add(Dropout(0.2))
+    model3.add(Dense(embedding_dim))
+    model3.add(Dropout(dropout))
+    model3.add(BatchNormalization())
 
-model3.add(Dense(300))
-model3.add(Dropout(0.2))
-model3.add(BatchNormalization())
+    model4 = Sequential()
+    model4.add(Embedding(nb_words + 1,
+                         embedding_dim,
+                         weights=[embedding_matrix],
+                         input_length=max_sequence_length,
+                         trainable=False))
+    model4.add(Convolution1D(nb_filter=nb_filter,
+                             filter_length=filter_length,
+                             border_mode='valid',
+                             activation='relu',
+                             subsample_length=1))
+    model4.add(Dropout(dropout))
 
-model4 = Sequential()
-model4.add(Embedding(len(word_index) + 1,
-                     300,
-                     weights=[embedding_matrix],
-                     input_length=40,
-                     trainable=False))
-model4.add(Convolution1D(nb_filter=nb_filter,
-                         filter_length=filter_length,
-                         border_mode='valid',
-                         activation='relu',
-                         subsample_length=1))
-model4.add(Dropout(0.2))
+    model4.add(Convolution1D(nb_filter=nb_filter,
+                             filter_length=filter_length,
+                             border_mode='valid',
+                             activation='relu',
+                             subsample_length=1))
 
-model4.add(Convolution1D(nb_filter=nb_filter,
-                         filter_length=filter_length,
-                         border_mode='valid',
-                         activation='relu',
-                         subsample_length=1))
+    model4.add(GlobalMaxPooling1D())
+    model4.add(Dropout(dropout))
 
-model4.add(GlobalMaxPooling1D())
-model4.add(Dropout(0.2))
+    model4.add(Dense(embedding_dim))
+    model4.add(Dropout(dropout))
+    model4.add(BatchNormalization())
+    model5 = Sequential()
+    model5.add(Embedding(nb_words + 1, embedding_dim, input_length=max_sequence_length, dropout=dropout))
+    model5.add(LSTM(embedding_dim, dropout_W=dropout, dropout_U=dropout))
 
-model4.add(Dense(300))
-model4.add(Dropout(0.2))
-model4.add(BatchNormalization())
-model5 = Sequential()
-model5.add(Embedding(len(word_index) + 1, 300, input_length=40, dropout=0.2))
-model5.add(LSTM(300, dropout_W=0.2, dropout_U=0.2))
+    model6 = Sequential()
+    model6.add(Embedding(nb_words + 1, embedding_dim, input_length=max_sequence_length, dropout=dropout))
+    model6.add(LSTM(embedding_dim, dropout_W=dropout, dropout_U=dropout))
 
-model6 = Sequential()
-model6.add(Embedding(len(word_index) + 1, 300, input_length=40, dropout=0.2))
-model6.add(LSTM(300, dropout_W=0.2, dropout_U=0.2))
+    merged_model = Sequential()
+    merged_model.add(Merge([model1, model2, model3, model4, model5, model6], mode='concat'))
+    merged_model.add(BatchNormalization())
 
-merged_model = Sequential()
-merged_model.add(Merge([model1, model2, model3, model4, model5, model6], mode='concat'))
-merged_model.add(BatchNormalization())
+    for _ in range(5):
+        merged_model.add(Dense(embedding_dim))
+        merged_model.add(PReLU())
+        merged_model.add(Dropout(dropout))
+        merged_model.add(BatchNormalization())
 
-merged_model.add(Dense(300))
-merged_model.add(PReLU())
-merged_model.add(Dropout(0.2))
-merged_model.add(BatchNormalization())
+    merged_model.add(Dense(1))
+    merged_model.add(Activation('sigmoid'))
 
-merged_model.add(Dense(300))
-merged_model.add(PReLU())
-merged_model.add(Dropout(0.2))
-merged_model.add(BatchNormalization())
+    merged_model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-merged_model.add(Dense(300))
-merged_model.add(PReLU())
-merged_model.add(Dropout(0.2))
-merged_model.add(BatchNormalization())
+    checkpoint = ModelCheckpoint(model_file, monitor='val_loss', save_best_only=True, verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=50, verbose=0, mode='auto')
 
-merged_model.add(Dense(300))
-merged_model.add(PReLU())
-merged_model.add(Dropout(0.2))
-merged_model.add(BatchNormalization())
+    history = merged_model.fit([train_q1, train_q2, train_q1, train_q2, train_q1, train_q2], y=labels, batch_size=batch_size, epochs=nb_epoch, verbose=1, validation_split=validation_split, shuffle=True, callbacks=[checkpoint, early_stopping])
 
-merged_model.add(Dense(300))
-merged_model.add(PReLU())
-merged_model.add(Dropout(0.2))
-merged_model.add(BatchNormalization())
+    merged_model.load_weights(model_file)
 
-merged_model.add(Dense(1))
-merged_model.add(Activation('sigmoid'))
+    pred = merged_model.predict([test_q1, test_q2, test_q1, test_q2, test_q1, test_q2], batch_size=batch_size, verbose=1)
 
-merged_model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    sub = pd.DataFrame()
+    sub['test_id'] = test_id
+    sub['is_duplicate'] = pred
+    sub.to_csv(submission_file, index=False)
 
-checkpoint = ModelCheckpoint('weights.h5', monitor='val_acc', save_best_only=True, verbose=2)
+    min_val_loss, idx = min((val, idx) for (idx, val) in enumerate(history.history['val_loss']))
+    print 'min_val_loss', idx + 1, min_val_loss
 
-merged_model.fit([x1, x2, x1, x2, x1, x2], y=y, batch_size=384, nb_epoch=200,
-                 verbose=1, validation_split=0.1, shuffle=True, callbacks=[checkpoint])
+    history_pd = pd.DataFrame({'epoch': [i + 1 for i in history.epoch],
+                               'training': history.history['loss'],
+                               'validation': history.history['val_loss']})
+    history_pd.to_csv(history_file, index=False)
 
-# predict
-test_data = pd.read_csv('data/f2_test.csv')
-test_x1 = tk.texts_to_sequences(test_data.question1.values.astype(str))
-test_x1 = sequence.pad_sequences(test_x1, maxlen=max_len)
+    if args.gcp:
+        subprocess.check_call(['gsutil', '-m', 'cp', '-r', model_file, os.path.join(args.job_dir, model_file)])
+        subprocess.check_call(['gsutil', '-m', 'cp', '-r', submission_file, os.path.join(args.job_dir, submission_file)])
+        subprocess.check_call(['gsutil', '-m', 'cp', '-r', history_file, os.path.join(args.job_dir, history_file)])
 
-test_x2 = tk.texts_to_sequences(test_data.question2.values.astype(str))
-test_x2 = sequence.pad_sequences(test_x2, maxlen=max_len)
-
-pred = merged_model.predict([test_x1, test_x2, test_x1, test_x2, test_x1, test_x2], batch_size=384, verbose=1)
-
-sub = pd.DataFrame()
-sub['test_id'] = test_data['test_id'].values
-sub['is_duplicate'] = pred
-sub.to_csv('submission/deepnet1.csv', index=False)
+    # plot
+    # ax = history.ix[:, :].plot(x='epoch', figsize={5, 8}, grid=True)
+    # ax.set_ylabel('loss')
+    # ax.set_ylim([0.0, 1.0])
